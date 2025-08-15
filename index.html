@@ -1,0 +1,518 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Virtual Synthesizer</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background: linear-gradient(135deg, #1a1a1a 0%, #0d0d0d 100%);
+            font-family: 'Courier New', monospace;
+            color: #00ff41;
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .synth-container {
+            background: linear-gradient(145deg, #2a2a2a, #1a1a1a);
+            border-radius: 20px;
+            padding: 30px;
+            box-shadow: 
+                inset 0 0 20px rgba(0, 0, 0, 0.5),
+                0 20px 60px rgba(0, 0, 0, 0.8),
+                0 0 0 1px rgba(255, 255, 255, 0.1);
+            max-width: 800px;
+            width: 100%;
+            position: relative;
+        }
+
+        .synth-container::before {
+            content: '';
+            position: absolute;
+            top: -2px;
+            left: -2px;
+            right: -2px;
+            bottom: -2px;
+            background: linear-gradient(45deg, #333, #111);
+            border-radius: 22px;
+            z-index: -1;
+        }
+
+        .screen {
+            background: linear-gradient(145deg, #0d0d0d, #1a1a1a);
+            border: 3px solid #333;
+            border-radius: 15px;
+            height: 120px;
+            margin-bottom: 30px;
+            position: relative;
+            overflow: hidden;
+            box-shadow: 
+                inset 0 5px 15px rgba(0, 0, 0, 0.8),
+                inset 0 -5px 15px rgba(255, 255, 255, 0.05);
+        }
+
+        .waveform {
+            position: absolute;
+            top: 50%;
+            left: 0;
+            right: 0;
+            height: 2px;
+            background: #00ff41;
+            transform: translateY(-50%);
+            box-shadow: 0 0 10px #00ff41;
+        }
+
+        .waveform::before {
+            content: '';
+            position: absolute;
+            top: -20px;
+            left: 0;
+            right: 0;
+            height: 40px;
+            background: repeating-linear-gradient(
+                90deg,
+                transparent,
+                transparent 2px,
+                #00ff41 2px,
+                #00ff41 3px
+            );
+            opacity: 0.3;
+            animation: wave-scan 2s linear infinite;
+        }
+
+        @keyframes wave-scan {
+            0% { transform: translateX(-100%); }
+            100% { transform: translateX(100%); }
+        }
+
+        .controls {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 40px;
+            flex-wrap: wrap;
+            gap: 20px;
+        }
+
+        .knob-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            flex: 1;
+            min-width: 80px;
+        }
+
+        .knob {
+            width: 60px;
+            height: 60px;
+            background: linear-gradient(145deg, #4a4a4a, #2a2a2a);
+            border-radius: 50%;
+            position: relative;
+            cursor: pointer;
+            box-shadow: 
+                inset 0 0 10px rgba(0, 0, 0, 0.5),
+                0 5px 15px rgba(0, 0, 0, 0.4),
+                0 0 0 2px rgba(255, 255, 255, 0.1);
+            transition: all 0.1s ease;
+        }
+
+        .knob:hover {
+            background: linear-gradient(145deg, #5a5a5a, #3a3a3a);
+            box-shadow: 
+                inset 0 0 10px rgba(0, 0, 0, 0.5),
+                0 8px 20px rgba(0, 0, 0, 0.6),
+                0 0 0 2px rgba(255, 255, 255, 0.15);
+        }
+
+        .knob::before {
+            content: '';
+            position: absolute;
+            top: 8px;
+            left: 50%;
+            width: 3px;
+            height: 20px;
+            background: linear-gradient(180deg, #00ff41, #008822);
+            border-radius: 2px;
+            transform: translateX(-50%) rotate(0deg);
+            transform-origin: center 22px;
+            box-shadow: 0 0 5px #00ff41;
+            transition: transform 0.1s ease;
+        }
+
+        .knob-label {
+            color: #ccc;
+            font-size: 12px;
+            margin-top: 10px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            text-align: center;
+        }
+
+        .keyboard {
+            position: relative;
+            height: 120px;
+            padding: 0 10px;
+            display: block;
+            width: 100%;
+        }
+
+        .white-keys-container {
+            display: flex;
+            width: 100%;
+            height: 100px;
+            position: relative;
+        }
+
+        .key {
+            border-radius: 0 0 8px 8px;
+            cursor: pointer;
+            transition: all 0.1s ease;
+            position: relative;
+            user-select: none;
+        }
+
+        .white-key {
+            flex: 1;
+            height: 100px;
+            background: linear-gradient(180deg, #4a4a4a, #2a2a2a);
+            border: 1px solid #666;
+            border-right: none;
+            box-shadow: 
+                0 5px 10px rgba(0, 0, 0, 0.3),
+                inset 0 1px 0 rgba(255, 255, 255, 0.1);
+        }
+
+        .white-key:last-of-type {
+            border-right: 1px solid #666;
+        }
+
+        .white-key:hover {
+            background: linear-gradient(180deg, #5a5a5a, #3a3a3a);
+        }
+
+        .white-key:active, .white-key.playing {
+            background: linear-gradient(180deg, #3a3a3a, #1a1a1a);
+            transform: translateY(2px);
+            box-shadow: 
+                0 2px 5px rgba(0, 0, 0, 0.5),
+                inset 0 1px 0 rgba(255, 255, 255, 0.05);
+        }
+
+        .black-key {
+            width: 8%;
+            height: 65px;
+            background: linear-gradient(180deg, #333, #111);
+            border: 1px solid #000;
+            z-index: 2;
+            position: absolute;
+            top: 0;
+            box-shadow: 
+                0 5px 10px rgba(0, 0, 0, 0.6),
+                inset 0 1px 0 rgba(255, 255, 255, 0.1);
+        }
+
+        .black-key[data-note="C#"] { left: 10.7%; }
+        .black-key[data-note="D#"] { left: 24.9%; }
+        .black-key[data-note="F#"] { left: 53.5%; }
+        .black-key[data-note="G#"] { left: 67.7%; }
+        .black-key[data-note="A#"] { left: 81.9%; }
+
+        .black-key:hover {
+            background: linear-gradient(180deg, #444, #222);
+        }
+
+        .black-key:active, .black-key.playing {
+            background: linear-gradient(180deg, #222, #000);
+            transform: translateY(2px);
+            box-shadow: 
+                0 2px 5px rgba(0, 0, 0, 0.8),
+                inset 0 1px 0 rgba(255, 255, 255, 0.05);
+        }
+
+        @media (max-width: 768px) {
+            .synth-container {
+                padding: 20px;
+            }
+            
+            .controls {
+                gap: 15px;
+            }
+            
+            .knob {
+                width: 50px;
+                height: 50px;
+            }
+            
+            .knob::before {
+                top: 6px;
+                height: 16px;
+                transform-origin: center 19px;
+            }
+            
+            .knob-label {
+                font-size: 10px;
+                margin-top: 8px;
+            }
+            
+            .white-key {
+                height: 80px;
+            }
+            
+            .black-key {
+                width: 6%;
+                height: 50px;
+            }
+            
+            .keyboard {
+                height: 100px;
+                padding: 0 5px;
+            }
+        }
+
+        @media (max-width: 480px) {
+            .controls {
+                justify-content: center;
+            }
+            
+            .knob-container {
+                min-width: 60px;
+            }
+            
+            .white-key {
+                height: 70px;
+            }
+            
+            .black-key {
+                width: 5%;
+                height: 45px;
+            }
+            
+            .keyboard {
+                height: 90px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="synth-container">
+        <div class="screen">
+            <div class="waveform"></div>
+        </div>
+        
+        <div class="controls">
+            <div class="knob-container">
+                <div class="knob" data-param="oscillator"></div>
+                <div class="knob-label">Oscillator</div>
+            </div>
+            <div class="knob-container">
+                <div class="knob" data-param="filter"></div>
+                <div class="knob-label">Filter</div>
+            </div>
+            <div class="knob-container">
+                <div class="knob" data-param="delay"></div>
+                <div class="knob-label">Delay</div>
+            </div>
+            <div class="knob-container">
+                <div class="knob" data-param="cutoff"></div>
+                <div class="knob-label">Cutoff</div>
+            </div>
+            <div class="knob-container">
+                <div class="knob" data-param="resonance"></div>
+                <div class="knob-label">Resonance</div>
+            </div>
+        </div>
+        
+        <div class="keyboard">
+            <div class="white-keys-container">
+                <div class="key white-key" data-note="C"></div>
+                <div class="key white-key" data-note="D"></div>
+                <div class="key white-key" data-note="E"></div>
+                <div class="key white-key" data-note="F"></div>
+                <div class="key white-key" data-note="G"></div>
+                <div class="key white-key" data-note="A"></div>
+                <div class="key white-key" data-note="B"></div>
+            </div>
+            <div class="key black-key" data-note="C#"></div>
+            <div class="key black-key" data-note="D#"></div>
+            <div class="key black-key" data-note="F#"></div>
+            <div class="key black-key" data-note="G#"></div>
+            <div class="key black-key" data-note="A#"></div>
+        </div>
+    </div>
+
+    <script>
+        // Knob interaction
+        const knobs = document.querySelectorAll('.knob');
+        let isRotating = false;
+        let currentKnob = null;
+
+        knobs.forEach(knob => {
+            let rotation = 0;
+            let startY = 0;
+
+            knob.addEventListener('mousedown', (e) => {
+                isRotating = true;
+                currentKnob = knob;
+                startY = e.clientY;
+                e.preventDefault();
+            });
+
+            knob.addEventListener('touchstart', (e) => {
+                isRotating = true;
+                currentKnob = knob;
+                startY = e.touches[0].clientY;
+                e.preventDefault();
+            });
+        });
+
+        document.addEventListener('mousemove', (e) => {
+            if (isRotating && currentKnob) {
+                const deltaY = startY - e.clientY;
+                const rotation = Math.max(-150, Math.min(150, deltaY));
+                currentKnob.querySelector('::before') || 
+                currentKnob.style.setProperty('--rotation', `${rotation}deg`);
+                const beforeElement = currentKnob.querySelector('::before');
+                currentKnob.style.transform = `rotate(${rotation}deg)`;
+                currentKnob.querySelector('::before').style.transform = `translateX(-50%) rotate(${rotation}deg)`;
+            }
+        });
+
+        document.addEventListener('touchmove', (e) => {
+            if (isRotating && currentKnob) {
+                const deltaY = startY - e.touches[0].clientY;
+                const rotation = Math.max(-150, Math.min(150, deltaY));
+                currentKnob.style.transform = `rotate(${rotation}deg)`;
+            }
+        });
+
+        document.addEventListener('mouseup', () => {
+            isRotating = false;
+            currentKnob = null;
+        });
+
+        document.addEventListener('touchend', () => {
+            isRotating = false;
+            currentKnob = null;
+        });
+
+        // Simplified knob rotation with CSS custom properties
+        knobs.forEach(knob => {
+            let rotation = 0;
+            let startY = 0;
+
+            const updateRotation = (deltaY) => {
+                rotation = Math.max(-150, Math.min(150, rotation + deltaY));
+                knob.style.setProperty('--knob-rotation', `${rotation}deg`);
+                knob.querySelector('::before').style.transform = `translateX(-50%) rotate(${rotation}deg)`;
+            };
+
+            knob.addEventListener('mousedown', (e) => {
+                isRotating = true;
+                currentKnob = knob;
+                startY = e.clientY;
+                e.preventDefault();
+            });
+
+            document.addEventListener('mousemove', (e) => {
+                if (isRotating && currentKnob === knob) {
+                    const deltaY = (startY - e.clientY) * 0.5;
+                    startY = e.clientY;
+                    updateRotation(deltaY);
+                }
+            });
+        });
+
+        // Key interactions
+        const keys = document.querySelectorAll('.key');
+        
+        keys.forEach(key => {
+            key.addEventListener('mousedown', () => {
+                key.classList.add('playing');
+                animateWaveform();
+            });
+            
+            key.addEventListener('mouseup', () => {
+                key.classList.remove('playing');
+            });
+            
+            key.addEventListener('mouseleave', () => {
+                key.classList.remove('playing');
+            });
+            
+            key.addEventListener('touchstart', (e) => {
+                e.preventDefault();
+                key.classList.add('playing');
+                animateWaveform();
+            });
+            
+            key.addEventListener('touchend', () => {
+                key.classList.remove('playing');
+            });
+        });
+
+        // Waveform animation
+        function animateWaveform() {
+            const waveform = document.querySelector('.waveform');
+            waveform.style.animation = 'none';
+            waveform.offsetHeight; // Trigger reflow
+            waveform.style.animation = 'wave-pulse 0.5s ease-out';
+        }
+
+        // Add wave pulse animation
+        const style = document.createElement('style');
+        style.textContent = `
+            @keyframes wave-pulse {
+                0% { 
+                    height: 2px;
+                    box-shadow: 0 0 10px #00ff41;
+                }
+                50% { 
+                    height: 8px;
+                    box-shadow: 0 0 20px #00ff41, 0 0 40px #00ff41;
+                }
+                100% { 
+                    height: 2px;
+                    box-shadow: 0 0 10px #00ff41;
+                }
+            }
+        `;
+        document.head.appendChild(style);
+
+        // Keyboard mapping
+        const keyMap = {
+            'a': 'C', 'w': 'C#', 's': 'D', 'e': 'D#', 'd': 'E',
+            'f': 'F', 't': 'F#', 'g': 'G', 'y': 'G#', 'h': 'A',
+            'u': 'A#', 'j': 'B'
+        };
+
+        document.addEventListener('keydown', (e) => {
+            const note = keyMap[e.key.toLowerCase()];
+            if (note) {
+                const key = document.querySelector(`[data-note="${note}"]`);
+                if (key && !key.classList.contains('playing')) {
+                    key.classList.add('playing');
+                    animateWaveform();
+                }
+            }
+        });
+
+        document.addEventListener('keyup', (e) => {
+            const note = keyMap[e.key.toLowerCase()];
+            if (note) {
+                const key = document.querySelector(`[data-note="${note}"]`);
+                if (key) {
+                    key.classList.remove('playing');
+                }
+            }
+        });
+    </script>
+</body>
+</html>
