@@ -349,7 +349,147 @@
     </div>
 
     <script>
-        // Knob interaction
+        // Audio context and synthesis setup
+        let audioContext;
+        let masterGain;
+        let filter;
+        let delay;
+        let delayGain;
+        let delayFeedback;
+        
+        // Synth parameters
+        const synthParams = {
+            oscillator: 0.5, // 0-1 (sine to sawtooth)
+            filter: 0.5,     // 0-1 (low to high cutoff)
+            delay: 0.3,      // 0-1 (dry to wet)
+            cutoff: 0.6,     // 0-1 (frequency cutoff)
+            resonance: 0.2   // 0-1 (low to high Q)
+        };
+
+        // Note frequencies (C4 to B4)
+        const noteFrequencies = {
+            'C': 261.63,
+            'C#': 277.18,
+            'D': 293.66,
+            'D#': 311.13,
+            'E': 329.63,
+            'F': 349.23,
+            'F#': 369.99,
+            'G': 392.00,
+            'G#': 415.30,
+            'A': 440.00,
+            'A#': 466.16,
+            'B': 493.88
+        };
+
+        // Active oscillators
+        const activeOscillators = new Map();
+
+        // Initialize audio context
+        function initAudio() {
+            if (!audioContext) {
+                audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                
+                // Master gain
+                masterGain = audioContext.createGain();
+                masterGain.gain.setValueAtTime(0.3, audioContext.currentTime);
+                
+                // Filter
+                filter = audioContext.createBiquadFilter();
+                filter.type = 'lowpass';
+                filter.frequency.setValueAtTime(1000, audioContext.currentTime);
+                filter.Q.setValueAtTime(1, audioContext.currentTime);
+                
+                // Delay setup
+                delay = audioContext.createDelay(1.0);
+                delay.delayTime.setValueAtTime(0.3, audioContext.currentTime);
+                
+                delayGain = audioContext.createGain();
+                delayGain.gain.setValueAtTime(0.3, audioContext.currentTime);
+                
+                delayFeedback = audioContext.createGain();
+                delayFeedback.gain.setValueAtTime(0.4, audioContext.currentTime);
+                
+                // Connect delay chain
+                delay.connect(delayFeedback);
+                delayFeedback.connect(delay);
+                delay.connect(delayGain);
+                
+                // Connect audio chain
+                filter.connect(masterGain);
+                filter.connect(delay);
+                delayGain.connect(masterGain);
+                masterGain.connect(audioContext.destination);
+            }
+        }
+
+        // Create oscillator for note
+        function playNote(note) {
+            initAudio();
+            
+            if (activeOscillators.has(note)) return; // Note already playing
+            
+            const oscillator = audioContext.createOscillator();
+            const gainNode = audioContext.createGain();
+            
+            // Set oscillator type based on parameter
+            const oscParam = synthParams.oscillator;
+            if (oscParam < 0.25) {
+                oscillator.type = 'sine';
+            } else if (oscParam < 0.5) {
+                oscillator.type = 'triangle';
+            } else if (oscParam < 0.75) {
+                oscillator.type = 'square';
+            } else {
+                oscillator.type = 'sawtooth';
+            }
+            
+            oscillator.frequency.setValueAtTime(noteFrequencies[note], audioContext.currentTime);
+            
+            // Envelope
+            gainNode.gain.setValueAtTime(0, audioContext.currentTime);
+            gainNode.gain.linearRampToValueAtTime(0.8, audioContext.currentTime + 0.05);
+            
+            // Connect
+            oscillator.connect(gainNode);
+            gainNode.connect(filter);
+            
+            oscillator.start();
+            activeOscillators.set(note, { oscillator, gainNode });
+        }
+
+        // Stop note
+        function stopNote(note) {
+            const activeNote = activeOscillators.get(note);
+            if (activeNote) {
+                const { oscillator, gainNode } = activeNote;
+                gainNode.gain.linearRampToValueAtTime(0, audioContext.currentTime + 0.1);
+                oscillator.stop(audioContext.currentTime + 0.1);
+                activeOscillators.delete(note);
+            }
+        }
+
+        // Update synth parameters
+        function updateSynthParams() {
+            if (!audioContext) return;
+            
+            // Update filter cutoff
+            const cutoffFreq = 100 + (synthParams.cutoff * 4900); // 100Hz to 5000Hz
+            filter.frequency.setValueAtTime(cutoffFreq, audioContext.currentTime);
+            
+            // Update resonance
+            const qValue = 1 + (synthParams.resonance * 29); // Q from 1 to 30
+            filter.Q.setValueAtTime(qValue, audioContext.currentTime);
+            
+            // Update delay time
+            const delayTime = 0.1 + (synthParams.delay * 0.4); // 0.1s to 0.5s
+            delay.delayTime.setValueAtTime(delayTime, audioContext.currentTime);
+            
+            // Update delay wet/dry mix
+            delayGain.gain.setValueAtTime(synthParams.delay * 0.5, audioContext.currentTime);
+        }
+
+        // Knob interaction with proper rotation
         const knobs = document.querySelectorAll('.knob');
         let isRotating = false;
         let currentKnob = null;
@@ -357,17 +497,30 @@
         knobs.forEach(knob => {
             let rotation = 0;
             let startY = 0;
+            const param = knob.dataset.param;
+
+            const updateKnobVisual = () => {
+                const angle = (rotation - 150) + (synthParams[param] * 300); // -150 to +150 degrees
+                knob.style.setProperty('--rotation', `${angle}deg`);
+                const indicator = knob.querySelector('::before');
+                knob.style.transform = `rotate(${angle}deg)`;
+            };
+
+            // Initialize knob position
+            updateKnobVisual();
 
             knob.addEventListener('mousedown', (e) => {
+                initAudio(); // Initialize audio on first interaction
                 isRotating = true;
-                currentKnob = knob;
+                currentKnob = { element: knob, param };
                 startY = e.clientY;
                 e.preventDefault();
             });
 
             knob.addEventListener('touchstart', (e) => {
+                initAudio();
                 isRotating = true;
-                currentKnob = knob;
+                currentKnob = { element: knob, param };
                 startY = e.touches[0].clientY;
                 e.preventDefault();
             });
@@ -375,21 +528,28 @@
 
         document.addEventListener('mousemove', (e) => {
             if (isRotating && currentKnob) {
-                const deltaY = startY - e.clientY;
-                const rotation = Math.max(-150, Math.min(150, deltaY));
-                currentKnob.querySelector('::before') || 
-                currentKnob.style.setProperty('--rotation', `${rotation}deg`);
-                const beforeElement = currentKnob.querySelector('::before');
-                currentKnob.style.transform = `rotate(${rotation}deg)`;
-                currentKnob.querySelector('::before').style.transform = `translateX(-50%) rotate(${rotation}deg)`;
+                const deltaY = (e.clientY - currentKnob.startY || 0) * -0.01;
+                synthParams[currentKnob.param] = Math.max(0, Math.min(1, synthParams[currentKnob.param] + deltaY));
+                updateSynthParams();
+                
+                // Update visual rotation
+                const angle = -150 + (synthParams[currentKnob.param] * 300);
+                currentKnob.element.style.transform = `rotate(${angle}deg)`;
+                
+                currentKnob.startY = e.clientY;
             }
         });
 
         document.addEventListener('touchmove', (e) => {
             if (isRotating && currentKnob) {
-                const deltaY = startY - e.touches[0].clientY;
-                const rotation = Math.max(-150, Math.min(150, deltaY));
-                currentKnob.style.transform = `rotate(${rotation}deg)`;
+                const deltaY = (e.touches[0].clientY - (currentKnob.startY || e.touches[0].clientY)) * -0.01;
+                synthParams[currentKnob.param] = Math.max(0, Math.min(1, synthParams[currentKnob.param] + deltaY));
+                updateSynthParams();
+                
+                const angle = -150 + (synthParams[currentKnob.param] * 300);
+                currentKnob.element.style.transform = `rotate(${angle}deg)`;
+                
+                currentKnob.startY = e.touches[0].clientY;
             }
         });
 
@@ -403,88 +563,48 @@
             currentKnob = null;
         });
 
-        // Simplified knob rotation with CSS custom properties
-        knobs.forEach(knob => {
-            let rotation = 0;
-            let startY = 0;
-
-            const updateRotation = (deltaY) => {
-                rotation = Math.max(-150, Math.min(150, rotation + deltaY));
-                knob.style.setProperty('--knob-rotation', `${rotation}deg`);
-                knob.querySelector('::before').style.transform = `translateX(-50%) rotate(${rotation}deg)`;
-            };
-
-            knob.addEventListener('mousedown', (e) => {
-                isRotating = true;
-                currentKnob = knob;
-                startY = e.clientY;
-                e.preventDefault();
-            });
-
-            document.addEventListener('mousemove', (e) => {
-                if (isRotating && currentKnob === knob) {
-                    const deltaY = (startY - e.clientY) * 0.5;
-                    startY = e.clientY;
-                    updateRotation(deltaY);
-                }
-            });
-        });
-
-        // Key interactions
+        // Key interactions with sound
         const keys = document.querySelectorAll('.key');
         
         keys.forEach(key => {
+            const note = key.dataset.note;
+            
             key.addEventListener('mousedown', () => {
                 key.classList.add('playing');
+                playNote(note);
                 animateWaveform();
             });
             
             key.addEventListener('mouseup', () => {
                 key.classList.remove('playing');
+                stopNote(note);
             });
             
             key.addEventListener('mouseleave', () => {
                 key.classList.remove('playing');
+                stopNote(note);
             });
             
             key.addEventListener('touchstart', (e) => {
                 e.preventDefault();
                 key.classList.add('playing');
+                playNote(note);
                 animateWaveform();
             });
             
             key.addEventListener('touchend', () => {
                 key.classList.remove('playing');
+                stopNote(note);
             });
         });
 
-        // Waveform animation
+        // Enhanced waveform animation
         function animateWaveform() {
             const waveform = document.querySelector('.waveform');
             waveform.style.animation = 'none';
             waveform.offsetHeight; // Trigger reflow
             waveform.style.animation = 'wave-pulse 0.5s ease-out';
         }
-
-        // Add wave pulse animation
-        const style = document.createElement('style');
-        style.textContent = `
-            @keyframes wave-pulse {
-                0% { 
-                    height: 2px;
-                    box-shadow: 0 0 10px #00ff41;
-                }
-                50% { 
-                    height: 8px;
-                    box-shadow: 0 0 20px #00ff41, 0 0 40px #00ff41;
-                }
-                100% { 
-                    height: 2px;
-                    box-shadow: 0 0 10px #00ff41;
-                }
-            }
-        `;
-        document.head.appendChild(style);
 
         // Keyboard mapping
         const keyMap = {
@@ -493,12 +613,16 @@
             'u': 'A#', 'j': 'B'
         };
 
+        let pressedKeys = new Set();
+
         document.addEventListener('keydown', (e) => {
             const note = keyMap[e.key.toLowerCase()];
-            if (note) {
+            if (note && !pressedKeys.has(e.key.toLowerCase())) {
+                pressedKeys.add(e.key.toLowerCase());
                 const key = document.querySelector(`[data-note="${note}"]`);
-                if (key && !key.classList.contains('playing')) {
+                if (key) {
                     key.classList.add('playing');
+                    playNote(note);
                     animateWaveform();
                 }
             }
@@ -507,11 +631,22 @@
         document.addEventListener('keyup', (e) => {
             const note = keyMap[e.key.toLowerCase()];
             if (note) {
+                pressedKeys.delete(e.key.toLowerCase());
                 const key = document.querySelector(`[data-note="${note}"]`);
                 if (key) {
                     key.classList.remove('playing');
+                    stopNote(note);
                 }
             }
+        });
+
+        // Initialize knob positions on load
+        window.addEventListener('load', () => {
+            knobs.forEach(knob => {
+                const param = knob.dataset.param;
+                const angle = -150 + (synthParams[param] * 300);
+                knob.style.transform = `rotate(${angle}deg)`;
+            });
         });
     </script>
 </body>
